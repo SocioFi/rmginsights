@@ -127,10 +127,14 @@ export function PersonalizationModal({ open, onOpenChange, accessToken, onPrefer
 
   const loadSubscription = async () => {
     try {
-      const { profile, error } = await AuthService.getProfile(accessToken || undefined);
-      if (!error && profile) {
-        setUserSubscription(profile.tier || 'free');
+      const result = await AuthService.getProfile(accessToken || undefined);
+      if (result.success && result.profile) {
+        // The database function returns 'subscription_tier', not 'tier'
+        const tier = result.profile.subscription_tier || result.profile.tier || 'free';
+        console.log('PersonalizationModal - Loaded subscription tier:', tier, 'Full profile:', result.profile);
+        setUserSubscription(tier);
       } else {
+        console.warn('PersonalizationModal - No profile found, defaulting to free tier. Error:', result.error);
         setUserSubscription('free');
       }
     } catch (err) {

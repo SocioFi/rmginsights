@@ -539,9 +539,9 @@ export default function App() {
             onUpgradeSuccess={async () => {
               // Reload user profile to get updated subscription
               if (accessToken) {
-                const { profile } = await AuthService.getProfile(accessToken);
-                if (profile) {
-                  setUser({ ...user, subscription: profile });
+                const result = await AuthService.getProfile(accessToken);
+                if (result.success && result.profile) {
+                  setUser({ ...user, subscription: result.profile });
                 }
               }
             }}

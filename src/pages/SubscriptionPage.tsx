@@ -31,10 +31,14 @@ export function SubscriptionPage({ user, accessToken, onBack, onUpgradeSuccess }
 
   const loadSubscription = async () => {
     try {
-      const { data: profile, error } = await AuthService.getProfile(accessToken || undefined);
-      if (!error && profile) {
-        setCurrentTier(profile.tier || 'free');
+      const result = await AuthService.getProfile(accessToken || undefined);
+      if (result.success && result.profile) {
+        // The database function returns 'subscription_tier', not 'tier'
+        const tier = result.profile.subscription_tier || result.profile.tier || 'free';
+        console.log('Loaded subscription tier:', tier, 'Full profile:', result.profile);
+        setCurrentTier(tier);
       } else {
+        console.warn('No profile found, defaulting to free tier. Error:', result.error);
         setCurrentTier('free');
       }
     } catch (err) {
