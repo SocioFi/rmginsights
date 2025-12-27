@@ -90,13 +90,24 @@ export function SubscriptionPage({ user, accessToken, onBack, onUpgradeSuccess }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to create subscription');
+        const errorMessage = errorData.error || `HTTP ${response.status}: ${response.statusText}`;
+        console.error('Stripe subscription error:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData,
+          fullResponse: errorData
+        });
+        throw new Error(errorMessage);
       }
 
-      const { subscription_id, client_secret } = await response.json();
+      const responseData = await response.json();
+      console.log('Stripe subscription response:', responseData);
+      
+      const { subscription_id, client_secret } = responseData;
       
       if (!client_secret) {
-        throw new Error('No client secret returned');
+        console.error('No client_secret in response:', responseData);
+        throw new Error('No client secret returned from server. Please check server logs.');
       }
 
       // Set up payment modal
@@ -104,9 +115,16 @@ export function SubscriptionPage({ user, accessToken, onBack, onUpgradeSuccess }
       setClientSecret(client_secret);
       setShowPaymentModal(true);
     } catch (err: any) {
-      console.error('Upgrade error:', err);
-      setPaymentError(err.message || 'Failed to process upgrade. Please try again.');
-      alert(err.message || 'Failed to process upgrade. Please try again.');
+      console.error('Upgrade error details:', {
+        message: err.message,
+        stack: err.stack,
+        error: err
+      });
+      const errorMessage = err.message || 'Failed to process upgrade. Please try again.';
+      setPaymentError(errorMessage);
+      
+      // Show detailed error in alert
+      alert(`Upgrade Failed: ${errorMessage}\n\nPlease check:\n1. Edge Function is deployed\n2. Stripe secrets are configured\n3. Browser console for details`);
     } finally {
       setIsUpgrading(false);
     }

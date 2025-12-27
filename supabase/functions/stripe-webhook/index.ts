@@ -3,7 +3,8 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
+// Use npm: prefix for better Deno compatibility
+import Stripe from "npm:stripe@14.21.0";
 
 serve(async (req) => {
   const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY")!;
