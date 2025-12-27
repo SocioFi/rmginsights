@@ -247,21 +247,28 @@ export default function App() {
   };
 
   const loadUserPreferences = async () => {
-    if (!accessToken) return;
+    if (!accessToken || !user) return;
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-8d57423f/preferences`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
-      );
+      // Use direct Supabase query instead of Edge Function
+      const { data: preferences, error } = await supabase
+        .from('user_preferences')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
 
-      if (response.ok) {
-        const { preferences } = await response.json();
-        setUserPreferences(preferences);
+      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+        console.error('Failed to load preferences:', error);
+        return;
+      }
+
+      if (preferences) {
+        setUserPreferences({
+          profession: preferences.profession,
+          interests: preferences.interests || [],
+          language: preferences.language || 'english',
+          aiLearningEnabled: preferences.ai_learning_enabled ?? true,
+        });
       }
     } catch (error) {
       console.error('Failed to load preferences:', error);

@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Checkbox } from './ui/checkbox';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { supabase } from '../utils/supabase/client';
 import { AuthService } from '../services/authService';
 import { canPersonalizeByPreferences, getSubscriptionTier } from '../utils/subscription';
 import { Sparkles, Briefcase, Globe, Mail, CheckCircle2, ArrowRight, Settings, Newspaper, TrendingUp, Bot, Factory, BarChart3, Leaf, Users, FileText, ShieldCheck, Lightbulb, Building2, Target, ShoppingCart, ClipboardCheck, TrendingDown, Brain, Package, Truck, Scissors, Palette, GraduationCap, HeartHandshake, DollarSign, TrendingUpDown, Shirt, PackageSearch, Network, Zap, Globe2, Scale, Megaphone, Sprout, AlertTriangle, Flame, Gauge, LineChart } from 'lucide-react';
@@ -103,24 +104,26 @@ export function PersonalizationModal({ open, onOpenChange, accessToken, user, on
   }, [open, accessToken]);
 
   const loadPreferences = async () => {
-    try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-8d57423f/preferences`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
-      );
+    if (!accessToken || !user) return;
 
-      if (response.ok) {
-        const { preferences } = await response.json();
-        if (preferences) {
-          setProfession(preferences.profession || '');
-          setLanguage(preferences.language || '');
-          setInterests(preferences.interests || []);
-          setAiLearningEnabled(preferences.aiLearningEnabled !== undefined ? preferences.aiLearningEnabled : true);
-        }
+    try {
+      // Use direct Supabase query instead of Edge Function
+      const { data: preferences, error } = await supabase
+        .from('user_preferences')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+        console.error('Failed to load preferences:', error);
+        return;
+      }
+
+      if (preferences) {
+        setProfession(preferences.profession || '');
+        setLanguage(preferences.language || 'english');
+        setInterests(preferences.interests || []);
+        setAiLearningEnabled(preferences.ai_learning_enabled ?? true);
       }
     } catch (err) {
       console.error('Failed to load preferences:', err);
@@ -181,25 +184,28 @@ export function PersonalizationModal({ open, onOpenChange, accessToken, user, on
     setSaveSuccess(false);
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-8d57423f/preferences`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({
-            profession,
-            interests,
-            language,
-            aiLearningEnabled,
-          }),
-        }
-      );
+      if (!user) {
+        throw new Error('User not found');
+      }
 
-      if (!response.ok) {
-        throw new Error('Failed to save preferences');
+      // Use direct Supabase upsert instead of Edge Function
+      const { data, error } = await supabase
+        .from('user_preferences')
+        .upsert({
+          user_id: user.id,
+          profession,
+          interests,
+          language,
+          ai_learning_enabled: aiLearningEnabled,
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: 'user_id'
+        })
+        .select()
+        .single();
+
+      if (error) {
+        throw new Error(error.message || 'Failed to save preferences');
       }
 
       if (onPreferencesSaved) {

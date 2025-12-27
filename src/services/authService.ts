@@ -156,8 +156,9 @@ export class AuthService {
           const { data: profileData, error: profileError } = await supabase
             .rpc('get_user_profile', { p_user_id: authData.user.id });
           
-          if (!profileError && profileData && profileData.length > 0) {
-            profile = profileData[0];
+          if (!profileError && profileData) {
+            // Function now returns a single jsonb object, not an array
+            profile = profileData;
           }
         } catch (profileErr) {
           console.warn('Could not fetch user profile:', profileErr);
@@ -369,15 +370,17 @@ export class AuthService {
         .rpc('get_user_profile', { p_user_id: user.id });
 
       if (profileError) {
+        console.error('get_user_profile error:', profileError);
         return {
           success: false,
           error: profileError.message || 'Failed to get profile',
         };
       }
 
+      // Function now returns a single jsonb object, not an array
       return {
         success: true,
-        profile: profileData && profileData.length > 0 ? profileData[0] : null,
+        profile: profileData || null,
       };
     } catch (error: any) {
       return {
