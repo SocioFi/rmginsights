@@ -16,8 +16,10 @@ import { SavedArticlesPage } from './pages/SavedArticlesPage';
 import { ReadingHistoryPage } from './pages/ReadingHistoryPage';
 import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
 import { TermsOfServicePage } from './pages/TermsOfServicePage';
+import { SubscriptionPage } from './pages/SubscriptionPage';
 import { supabase } from './utils/supabase/client';
 import { projectId, publicAnonKey } from './utils/supabase/info';
+import { AuthService } from './services/authService';
 
 export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -26,7 +28,7 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [userPreferences, setUserPreferences] = useState<any>(null);
-  const [currentPage, setCurrentPage] = useState<'home' | 'story' | 'business' | 'industry' | 'markets' | 'saved' | 'history' | 'privacy' | 'terms' | 'reset-password'>('home');
+  const [currentPage, setCurrentPage] = useState<'home' | 'story' | 'business' | 'industry' | 'markets' | 'saved' | 'history' | 'privacy' | 'terms' | 'reset-password' | 'subscriptions'>('home');
   const [currentStoryId, setCurrentStoryId] = useState<string>('');
 
   // Track if we've shown welcome modal for this session
@@ -99,6 +101,21 @@ export default function App() {
               window.history.replaceState({}, '', window.location.pathname || '/');
             }
             setCurrentPage('home');
+            
+            // Send welcome email (optional - won't fail if service not available)
+            if (session.user.id && session.user.email) {
+              import('./services/authService').then(({ AuthService }) => {
+                AuthService.sendWelcomeEmail(
+                  session.user.id,
+                  session.user.email,
+                  session.user.user_metadata?.name || ''
+                ).catch(err => {
+                  console.warn('Welcome email not sent:', err);
+                  // Don't show error to user - welcome email is optional
+                });
+              });
+            }
+            
             // Small delay to ensure state is updated
             setTimeout(() => {
               setIsWelcomeModalOpen(true);
@@ -176,9 +193,13 @@ export default function App() {
             console.error('Error setting session from hash:', error);
           } else if (data.session) {
             console.log('Session set successfully from hash tokens');
-            setUser(data.session.user);
-            setAccessToken(data.session.access_token);
-            return; // Don't check regular session if we just set one
+            // Refresh user to get latest email_confirmed_at status
+            const { data: { user: refreshedUser } } = await supabase.auth.getUser();
+            if (refreshedUser) {
+              setUser(refreshedUser);
+              setAccessToken(data.session.access_token);
+              return; // Don't check regular session if we just set one
+            }
           }
         }
       }
@@ -186,8 +207,12 @@ export default function App() {
       // Check for existing session
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.access_token && session?.user) {
-        setUser(session.user);
-        setAccessToken(session.access_token);
+        // Refresh user to get latest email_confirmed_at status
+        const { data: { user: refreshedUser } } = await supabase.auth.getUser();
+        if (refreshedUser) {
+          setUser(refreshedUser);
+          setAccessToken(session.access_token);
+        }
       }
     } catch (error) {
       console.error('Session check error:', error);
@@ -372,6 +397,7 @@ export default function App() {
           accessToken={accessToken}
           onPreferencesSaved={handlePreferencesSaved}
           onLoginClick={() => setIsAuthModalOpen(true)}
+          onSubscriptionRequired={() => setCurrentPage('subscriptions')}
         />
 
         {/* Welcome Modal - Shown after email verification */}
@@ -381,8 +407,7 @@ export default function App() {
           userName={user?.user_metadata?.name || user?.email?.split('@')[0]}
           onViewSubscriptions={() => {
             setIsWelcomeModalOpen(false);
-            // You can add subscription page/modal here
-            alert('Subscription management coming soon! For now, you\'re on the Free tier with access to all basic features.');
+            setCurrentPage('subscriptions');
           }}
         />
 
@@ -503,6 +528,22 @@ export default function App() {
               window.location.hash = '';
               window.history.replaceState({}, '', window.location.pathname);
               setCurrentPage('home');
+            }}
+          />
+        ) : currentPage === 'subscriptions' ? (
+          <SubscriptionPage
+            key="subscriptions"
+            user={user}
+            accessToken={accessToken}
+            onBack={navigateToHome}
+            onUpgradeSuccess={async () => {
+              // Reload user profile to get updated subscription
+              if (accessToken) {
+                const { profile } = await AuthService.getProfile(accessToken);
+                if (profile) {
+                  setUser({ ...user, subscription: profile });
+                }
+              }
             }}
           />
         ) : (

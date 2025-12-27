@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Checkbox } from './ui/checkbox';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { AuthService } from '../services/authService';
 import { Sparkles, Briefcase, Globe, Mail, CheckCircle2, ArrowRight, Settings, Newspaper, TrendingUp, Bot, Factory, BarChart3, Leaf, Users, FileText, ShieldCheck, Lightbulb, Building2, Target, ShoppingCart, ClipboardCheck, TrendingDown, Brain, Package, Truck, Scissors, Palette, GraduationCap, HeartHandshake, DollarSign, TrendingUpDown, Shirt, PackageSearch, Network, Zap, Globe2, Scale, Megaphone, Sprout, AlertTriangle, Flame, Gauge, LineChart } from 'lucide-react';
 import { Separator } from './ui/separator';
 import { Badge } from './ui/badge';
@@ -19,9 +20,10 @@ interface PersonalizationModalProps {
   accessToken: string | null;
   onPreferencesSaved?: (prefs: any) => void;
   onLoginClick?: () => void;
+  onSubscriptionRequired?: () => void;
 }
 
-export function PersonalizationModal({ open, onOpenChange, accessToken, onPreferencesSaved, onLoginClick }: PersonalizationModalProps) {
+export function PersonalizationModal({ open, onOpenChange, accessToken, onPreferencesSaved, onLoginClick, onSubscriptionRequired }: PersonalizationModalProps) {
   const [profession, setProfession] = useState('');
   const [language, setLanguage] = useState('');
   const [email, setEmail] = useState('');
@@ -30,6 +32,7 @@ export function PersonalizationModal({ open, onOpenChange, accessToken, onPrefer
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [userSubscription, setUserSubscription] = useState<'free' | 'pro' | 'business' | null>(null);
 
   const interestOptions = [
     { id: 'AI in RMG', label: 'AI & Technology', color: '#EAB308', Icon: Bot },
@@ -89,10 +92,11 @@ export function PersonalizationModal({ open, onOpenChange, accessToken, onPrefer
     );
   };
 
-  // Load existing preferences when modal opens
+  // Load existing preferences and subscription when modal opens
   useEffect(() => {
     if (open && accessToken) {
       loadPreferences();
+      loadSubscription();
     }
   }, [open, accessToken]);
 
@@ -121,9 +125,33 @@ export function PersonalizationModal({ open, onOpenChange, accessToken, onPrefer
     }
   };
 
+  const loadSubscription = async () => {
+    try {
+      const { profile, error } = await AuthService.getProfile(accessToken || undefined);
+      if (!error && profile) {
+        setUserSubscription(profile.tier || 'free');
+      } else {
+        setUserSubscription('free');
+      }
+    } catch (err) {
+      console.error('Failed to load subscription:', err);
+      setUserSubscription('free');
+    }
+  };
+
   const handleSave = async () => {
     if (!accessToken) {
       setError('Please log in to save preferences');
+      return;
+    }
+
+    // Check subscription tier - Free tier cannot use preference-based personalization
+    if (userSubscription === 'free') {
+      // Close modal and redirect to subscription page
+      onOpenChange(false);
+      if (onSubscriptionRequired) {
+        onSubscriptionRequired();
+      }
       return;
     }
 

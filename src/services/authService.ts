@@ -3,6 +3,7 @@
 // No Edge Functions required - works locally and on Vercel
 
 import { supabase } from '../utils/supabase/client';
+import { projectId, publicAnonKey } from '../utils/supabase/info';
 
 export interface SignupData {
   email: string;
@@ -37,8 +38,8 @@ export class AuthService {
       // Log signup attempt for debugging
       console.log('Attempting signup for:', data.email);
       console.log('Supabase config:', {
-        projectId: import.meta.env.VITE_SUPABASE_PROJECT_ID || 'using fallback',
-        hasAnonKey: !!import.meta.env.VITE_SUPABASE_ANON_KEY,
+        projectId: projectId,
+        hasAnonKey: !!publicAnonKey,
       });
       
       // Get the correct redirect URL (handle both http and https)
@@ -136,15 +137,16 @@ export class AuthService {
         };
       }
 
-      // Check if email is verified
-      if (authData.user && !authData.user.email_confirmed_at) {
-        // Sign out the user since email is not verified
-        await supabase.auth.signOut();
-        
-        return {
-          success: false,
-          error: 'Please verify your email address before logging in. Check your inbox for the verification link.',
-        };
+      // Supabase's signInWithPassword already blocks unverified users
+      // If we get here, the user is authenticated and email should be confirmed
+      // Just refresh user data to ensure we have the latest status
+      if (authData.user) {
+        const { data: { user: refreshedUser } } = await supabase.auth.getUser();
+        if (refreshedUser) {
+          // Use refreshed user data (has latest email_confirmed_at)
+          authData.user = refreshedUser;
+          console.log('Login successful. Email confirmed:', !!refreshedUser.email_confirmed_at);
+        }
       }
 
       // Get user profile with subscription info
@@ -300,6 +302,49 @@ export class AuthService {
       return {
         success: false,
         error: error.message || 'Failed to resend verification email',
+      };
+    }
+  }
+
+  /**
+   * Send welcome email after email verification
+   * Uses Vercel API route (simpler than Edge Functions)
+   * No Supabase Edge Functions needed - just uses your Vercel deployment
+   */
+  static async sendWelcomeEmail(userId: string, email: string, name: string): Promise<{ success: boolean; message?: string; error?: string }> {
+    try {
+      // Call Vercel API route (deployed at /api/send-welcome-email)
+      const apiUrl = `${window.location.origin}/api/send-welcome-email`;
+      
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId, email, name }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.warn('Welcome email API not available or failed:', errorData);
+        // Don't fail - welcome email is optional
+        return {
+          success: false,
+          error: 'Welcome email service not configured',
+        };
+      }
+
+      const result = await response.json();
+      return {
+        success: true,
+        message: result.message || 'Welcome email sent',
+      };
+    } catch (error: any) {
+      // Don't fail - welcome email is optional
+      console.warn('Could not send welcome email:', error);
+      return {
+        success: false,
+        error: error.message || 'Welcome email service not available',
       };
     }
   }
