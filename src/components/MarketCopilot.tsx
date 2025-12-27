@@ -13,6 +13,7 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { canAccessCopilots } from '../utils/subscription';
 import { 
   Bot, 
   FileText, 
@@ -58,9 +59,8 @@ export function MarketCopilot({ user, onUpgradeClick }: MarketCopilotProps) {
   const [generationProgress, setGenerationProgress] = useState(0);
   const [reportGenerated, setReportGenerated] = useState(false);
 
-  // Check if user is subscribed (demo: check if user exists and has a subscription flag)
-  // For testing: To enable premium features, add { subscription: 'premium' } to user object
-  const isSubscribed = user?.subscription === 'premium' || false;
+  // Check if user has Business tier (required for Copilots)
+  const isSubscribed = canAccessCopilots(user);
 
   const analysisTypes = [
     { value: 'price-trends', label: 'Price Trends Analysis', icon: TrendingUp },

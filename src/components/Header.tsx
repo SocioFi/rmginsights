@@ -1,5 +1,5 @@
 import image_7addd6f658e761c8c3d833232931a0929ec0356b from 'figma:asset/7addd6f658e761c8c3d833232931a0929ec0356b.png';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Button } from './ui/button';
 import { User, Settings, LogOut, Menu, X, Sun, Moon, Sparkles, BookmarkCheck, TrendingUp, Award, Bot } from 'lucide-react';
@@ -8,9 +8,11 @@ import { Avatar, AvatarFallback } from './ui/avatar';
 import { useTheme } from './ThemeProvider';
 import { Badge } from './ui/badge';
 import logoImage from 'figma:asset/b912a80f881cf1ec7c838d822f0de9df1ed32ebf.png';
+import { AuthService } from '../services/authService';
 
 interface HeaderProps {
   user: any | null;
+  accessToken?: string | null;
   onLoginClick: () => void;
   onPersonalizeClick: () => void;
   onLogout: () => void;
@@ -24,6 +26,7 @@ interface HeaderProps {
 
 export function Header({ 
   user, 
+  accessToken,
   onLoginClick, 
   onPersonalizeClick, 
   onLogout,
@@ -36,6 +39,50 @@ export function Header({
 }: HeaderProps) {
   const { theme, toggleTheme } = useTheme();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [subscriptionTier, setSubscriptionTier] = useState<'free' | 'pro' | 'business' | null>(null);
+
+  // Load subscription tier when user is logged in
+  useEffect(() => {
+    if (user && accessToken) {
+      loadSubscription();
+    } else {
+      setSubscriptionTier(null);
+    }
+  }, [user, accessToken]);
+
+  const loadSubscription = async () => {
+    try {
+      const result = await AuthService.getProfile(accessToken || undefined);
+      if (result.success && result.profile) {
+        const tier = result.profile.subscription_tier || result.profile.tier || 'free';
+        console.log('Header - Loaded subscription tier:', tier);
+        setSubscriptionTier(tier);
+      } else {
+        console.warn('Header - No profile found, defaulting to free tier');
+        setSubscriptionTier('free');
+      }
+    } catch (err) {
+      console.error('Header - Failed to load subscription:', err);
+      setSubscriptionTier('free');
+    }
+  };
+
+  const getTierDisplay = (tier: string | null) => {
+    if (!tier) return null;
+    return tier.toUpperCase();
+  };
+
+  const getTierColor = (tier: string | null) => {
+    switch (tier) {
+      case 'pro':
+        return 'bg-[#57ACAF] text-white border-[#57ACAF]';
+      case 'business':
+        return 'bg-[#EAB308] text-[#101725] border-[#EAB308]';
+      case 'free':
+      default:
+        return 'bg-[#6F83A7] text-white border-[#6F83A7]';
+    }
+  };
   
   const getInitials = (name: string) => {
     return name
@@ -153,9 +200,11 @@ export function Header({
                           <p className="text-[#6F83A7] dark:text-[#57ACAF] text-xs transition-colors">
                             {user.user_metadata?.profession?.replace('-', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Member'}
                           </p>
-                          <Badge variant="outline" className="bg-[#EAB308] text-[#101725] border-[#EAB308] text-[10px] px-1 py-0">
-                            PRO
-                          </Badge>
+                          {subscriptionTier && (
+                            <Badge variant="outline" className={`${getTierColor(subscriptionTier)} text-[10px] px-1 py-0`}>
+                              {getTierDisplay(subscriptionTier)}
+                            </Badge>
+                          )}
                         </div>
                       </div>
                       <Avatar className="w-10 h-10 bg-gradient-to-br from-[#101725] to-[#6F83A7] dark:from-[#EAB308] dark:to-[#F59E0B] border-2 border-[#EAB308] dark:border-[#101725] transition-all group-hover:scale-105">
@@ -183,9 +232,15 @@ export function Header({
                             <p className="text-white dark:text-[#101725] truncate">
                               {user.user_metadata?.name || user.email?.split('@')[0] || 'User'}
                             </p>
-                            <Badge variant="outline" className="bg-white/20 text-white dark:bg-[#101725]/20 dark:text-[#101725] border-white/40 dark:border-[#101725]/40 text-[10px] px-1.5 py-0">
-                              PRO
-                            </Badge>
+                            {subscriptionTier && (
+                              <Badge variant="outline" className={`text-white dark:text-[#101725] border-white/40 dark:border-[#101725]/40 text-[10px] px-1.5 py-0 ${
+                                subscriptionTier === 'pro' ? 'bg-[#57ACAF]/80' :
+                                subscriptionTier === 'business' ? 'bg-[#EAB308]/80' :
+                                'bg-[#6F83A7]/80'
+                              }`}>
+                                {getTierDisplay(subscriptionTier)}
+                              </Badge>
+                            )}
                           </div>
                           <p className="text-white/80 dark:text-[#101725]/80 text-xs truncate mt-0.5">
                             {user.email}

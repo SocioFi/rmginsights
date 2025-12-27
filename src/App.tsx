@@ -93,6 +93,20 @@ export default function App() {
           setAccessToken(session.access_token);
           setIsAuthModalOpen(false); // Close modal on successful login/OAuth/verification
           
+          // Load user profile with subscription info
+          AuthService.getProfile(session.access_token).then((result) => {
+            if (result.success && result.profile) {
+              // Store subscription info in user object for easy access
+              setUser((prevUser: any) => ({
+                ...prevUser,
+                subscription: result.profile,
+              }));
+            }
+          }).catch((err) => {
+            console.warn('Could not load user profile:', err);
+            // Don't fail login if profile fetch fails
+          });
+          
           // Show welcome modal if this is a new email verification
           if (isEmailVerification && !hasShownWelcome) {
             setHasShownWelcome(true);
@@ -212,6 +226,19 @@ export default function App() {
         if (refreshedUser) {
           setUser(refreshedUser);
           setAccessToken(session.access_token);
+          
+          // Load user profile with subscription info
+          try {
+            const result = await AuthService.getProfile(session.access_token);
+            if (result.success && result.profile) {
+              setUser((prevUser: any) => ({
+                ...prevUser,
+                subscription: result.profile,
+              }));
+            }
+          } catch (err) {
+            console.warn('Could not load user profile:', err);
+          }
         }
       }
     } catch (error) {
@@ -241,9 +268,23 @@ export default function App() {
     }
   };
 
-  const handleAuthSuccess = (userData: any, token: string) => {
+  const handleAuthSuccess = async (userData: any, token: string) => {
     setUser(userData);
     setAccessToken(token);
+    
+    // Load user profile with subscription info
+    try {
+      const result = await AuthService.getProfile(token);
+      if (result.success && result.profile) {
+        // Store subscription info in user object for easy access
+        setUser((prevUser: any) => ({
+          ...prevUser,
+          subscription: result.profile,
+        }));
+      }
+    } catch (err) {
+      console.warn('Could not load user profile:', err);
+    }
   };
 
   const handleLogout = async () => {
@@ -416,6 +457,7 @@ export default function App() {
           <div key="home">
             <Header
               user={user}
+              accessToken={accessToken}
               onLoginClick={() => setIsAuthModalOpen(true)}
               onPersonalizeClick={() => setIsPersonalizeModalOpen(true)}
               onLogout={handleLogout}
@@ -560,7 +602,7 @@ export default function App() {
             onNavigateBusiness={navigateToBusiness}
             onNavigateIndustry={navigateToIndustry}
             onNavigateMarkets={navigateToMarkets}
-            onUpgradeClick={() => alert('Premium subscription coming soon! Contact FabricXAI for early access to Market Copilot and advanced analytics.')}
+            onUpgradeClick={() => setCurrentPage('subscriptions')}
             onNavigatePrivacy={navigateToPrivacy}
             onNavigateTerms={navigateToTerms}
           />

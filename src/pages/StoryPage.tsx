@@ -402,6 +402,7 @@ The launch of MARBIM signals a new era for Bangladesh's garment industry—one w
 
       <Header
         user={user}
+        accessToken={accessToken}
         onLoginClick={onLoginClick}
         onPersonalizeClick={onPersonalizeClick}
         onLogout={onLogout}

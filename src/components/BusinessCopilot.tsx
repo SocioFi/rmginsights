@@ -11,6 +11,7 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { canAccessCopilots } from '../utils/subscription';
 import { 
   Bot, 
   FileText, 
@@ -58,7 +59,7 @@ export function BusinessCopilot({ user, onUpgradeClick }: BusinessCopilotProps) 
   const [generationProgress, setGenerationProgress] = useState(0);
   const [reportGenerated, setReportGenerated] = useState(false);
 
-  const isSubscribed = user?.subscription === 'premium' || false;
+  const isSubscribed = canAccessCopilots(user);
 
   const analysisTypes = [
     { value: 'export-performance', label: 'Export Performance Analysis', icon: TrendingUp },
