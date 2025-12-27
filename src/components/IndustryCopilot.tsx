@@ -362,7 +362,7 @@ For full access to real-time data and advanced analytics, contact FabricXAI.
             <Alert className="border-0 bg-transparent">
               <Lock className="w-4 h-4 text-amber-600 dark:text-amber-400" />
               <AlertDescription className="text-sm text-amber-800 dark:text-amber-200 ml-2">
-                <strong>Premium Feature:</strong> Upgrade to access AI-powered manufacturing analysis and generate detailed PDF reports.
+                <strong>Business Tier Feature:</strong> Upgrade to Business tier to access AI-powered manufacturing analysis and generate detailed PDF reports. Pro and Free tier members cannot access this feature.
                 <Button 
                   onClick={onUpgradeClick}
                   size="sm"
@@ -536,12 +536,12 @@ For full access to real-time data and advanced analytics, contact FabricXAI.
                     {isSubscribed ? (
                       <span className="flex items-center gap-2">
                         <CheckCircle2 className="w-4 h-4 text-green-500" />
-                        Premium Access Active
+                        Business Tier Active
                       </span>
                     ) : (
                       <span className="flex items-center gap-2">
                         <Lock className="w-4 h-4 text-amber-500" />
-                        Premium Feature
+                        Business Tier Feature
                       </span>
                     )}
                   </div>

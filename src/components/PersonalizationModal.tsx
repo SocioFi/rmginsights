@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Checkbox } from './ui/checkbox';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { AuthService } from '../services/authService';
+import { canPersonalizeByPreferences, getSubscriptionTier } from '../utils/subscription';
 import { Sparkles, Briefcase, Globe, Mail, CheckCircle2, ArrowRight, Settings, Newspaper, TrendingUp, Bot, Factory, BarChart3, Leaf, Users, FileText, ShieldCheck, Lightbulb, Building2, Target, ShoppingCart, ClipboardCheck, TrendingDown, Brain, Package, Truck, Scissors, Palette, GraduationCap, HeartHandshake, DollarSign, TrendingUpDown, Shirt, PackageSearch, Network, Zap, Globe2, Scale, Megaphone, Sprout, AlertTriangle, Flame, Gauge, LineChart } from 'lucide-react';
 import { Separator } from './ui/separator';
 import { Badge } from './ui/badge';
@@ -129,8 +130,8 @@ export function PersonalizationModal({ open, onOpenChange, accessToken, onPrefer
     try {
       const result = await AuthService.getProfile(accessToken || undefined);
       if (result.success && result.profile) {
-        // The database function returns 'subscription_tier', not 'tier'
-        const tier = result.profile.subscription_tier || result.profile.tier || 'free';
+        // Use utility function to get subscription tier
+        const tier = getSubscriptionTier(user, result.profile);
         console.log('PersonalizationModal - Loaded subscription tier:', tier, 'Full profile:', result.profile);
         setUserSubscription(tier);
       } else {
@@ -149,13 +150,17 @@ export function PersonalizationModal({ open, onOpenChange, accessToken, onPrefer
       return;
     }
 
-    // Check subscription tier - Free tier cannot use preference-based personalization
-    if (userSubscription === 'free') {
-      // Close modal and redirect to subscription page
-      onOpenChange(false);
-      if (onSubscriptionRequired) {
-        onSubscriptionRequired();
-      }
+    // Check subscription tier - Only Pro and Business tiers can save preferences
+    // Free tier users cannot use preference-based personalization
+    if (!canPersonalizeByPreferences(user)) {
+      // Show error message and redirect to subscription page
+      setError('Upgrade to Pro or Business tier to save preferences and enable AI-powered personalization');
+      setTimeout(() => {
+        onOpenChange(false);
+        if (onSubscriptionRequired) {
+          onSubscriptionRequired();
+        }
+      }, 2000);
       return;
     }
 
@@ -531,7 +536,7 @@ export function PersonalizationModal({ open, onOpenChange, accessToken, onPrefer
             <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
               <Button
                 onClick={handleSave}
-                disabled={isLoading || !accessToken || interests.length === 0}
+                disabled={isLoading || !accessToken || interests.length === 0 || userSubscription === 'free' || !canPersonalizeByPreferences(user)}
                 className="w-full bg-gradient-to-r from-[#EAB308] to-[#F59E0B] hover:from-[#101725] hover:to-[#101725] dark:from-[#EAB308] dark:to-[#F59E0B] dark:hover:from-[#57ACAF] dark:hover:to-[#57ACAF] text-[#101725] hover:text-white dark:text-[#101725] dark:hover:text-white uppercase tracking-widest text-sm py-6 transition-all shadow-md disabled:opacity-50 group"
               >
                 {isLoading ? (
