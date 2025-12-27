@@ -436,6 +436,7 @@ export default function App() {
           open={isPersonalizeModalOpen}
           onOpenChange={setIsPersonalizeModalOpen}
           accessToken={accessToken}
+          user={user}
           onPreferencesSaved={handlePreferencesSaved}
           onLoginClick={() => setIsAuthModalOpen(true)}
           onSubscriptionRequired={() => setCurrentPage('subscriptions')}

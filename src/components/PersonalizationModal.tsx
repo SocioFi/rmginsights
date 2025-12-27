@@ -19,12 +19,13 @@ interface PersonalizationModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   accessToken: string | null;
+  user?: any;
   onPreferencesSaved?: (prefs: any) => void;
   onLoginClick?: () => void;
   onSubscriptionRequired?: () => void;
 }
 
-export function PersonalizationModal({ open, onOpenChange, accessToken, onPreferencesSaved, onLoginClick, onSubscriptionRequired }: PersonalizationModalProps) {
+export function PersonalizationModal({ open, onOpenChange, accessToken, user, onPreferencesSaved, onLoginClick, onSubscriptionRequired }: PersonalizationModalProps) {
   const [profession, setProfession] = useState('');
   const [language, setLanguage] = useState('');
   const [email, setEmail] = useState('');
@@ -130,10 +131,17 @@ export function PersonalizationModal({ open, onOpenChange, accessToken, onPrefer
     try {
       const result = await AuthService.getProfile(accessToken || undefined);
       if (result.success && result.profile) {
-        // Use utility function to get subscription tier
-        const tier = getSubscriptionTier(user, result.profile);
+        // Get subscription tier directly from profile (most reliable)
+        // The database function returns 'subscription_tier' field
+        const tier = result.profile.subscription_tier || result.profile.tier || 'free';
         console.log('PersonalizationModal - Loaded subscription tier:', tier, 'Full profile:', result.profile);
         setUserSubscription(tier);
+        
+        // Double-check: verify tier is valid
+        if (tier !== 'free' && tier !== 'pro' && tier !== 'business') {
+          console.warn('PersonalizationModal - Invalid tier detected:', tier, 'defaulting to free');
+          setUserSubscription('free');
+        }
       } else {
         console.warn('PersonalizationModal - No profile found, defaulting to free tier. Error:', result.error);
         setUserSubscription('free');
@@ -152,7 +160,11 @@ export function PersonalizationModal({ open, onOpenChange, accessToken, onPrefer
 
     // Check subscription tier - Only Pro and Business tiers can save preferences
     // Free tier users cannot use preference-based personalization
-    if (!canPersonalizeByPreferences(user)) {
+    // Use userSubscription state which is loaded directly from database (most reliable)
+    const currentTier = userSubscription || 'free';
+    console.log('PersonalizationModal - handleSave - Current subscription tier:', currentTier, 'userSubscription state:', userSubscription);
+    
+    if (currentTier === 'free') {
       // Show error message and redirect to subscription page
       setError('Upgrade to Pro or Business tier to save preferences and enable AI-powered personalization');
       setTimeout(() => {
@@ -515,6 +527,37 @@ export function PersonalizationModal({ open, onOpenChange, accessToken, onPrefer
               </p>
             </div>
 
+            {/* Subscription Warning for Free Tier */}
+            {accessToken && userSubscription === 'free' && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-gradient-to-br from-[#EAB308]/10 to-[#57ACAF]/10 dark:from-[#EAB308]/20 dark:to-[#57ACAF]/20 border-2 border-[#EAB308] dark:border-[#EAB308] p-5 rounded-lg"
+              >
+                <div className="flex items-start gap-3">
+                  <ShieldCheck className="w-5 h-5 text-[#EAB308] flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <h4 className="text-[#101725] dark:text-[#F9FAFB] font-semibold mb-1">Upgrade Required</h4>
+                    <p className="text-sm text-[#6F83A7] dark:text-[#9BA5B7] mb-3">
+                      Preference-based personalization is available for <strong>Pro</strong> and <strong>Business</strong> tier subscribers. Upgrade to unlock AI-powered content recommendations tailored to your interests.
+                    </p>
+                    <Button
+                      onClick={() => {
+                        onOpenChange(false);
+                        if (onSubscriptionRequired) {
+                          onSubscriptionRequired();
+                        }
+                      }}
+                      className="bg-gradient-to-r from-[#EAB308] to-[#F59E0B] hover:from-[#101725] hover:to-[#101725] dark:from-[#EAB308] dark:to-[#F59E0B] dark:hover:from-[#57ACAF] dark:hover:to-[#57ACAF] text-[#101725] hover:text-white dark:text-[#101725] dark:hover:text-white uppercase tracking-widest text-xs py-2 px-4 transition-all"
+                    >
+                      View Subscription Plans
+                      <ArrowRight className="w-3 h-3 ml-2" />
+                    </Button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
             {/* Error Message */}
             <AnimatePresence>
               {error && (
@@ -536,7 +579,7 @@ export function PersonalizationModal({ open, onOpenChange, accessToken, onPrefer
             <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
               <Button
                 onClick={handleSave}
-                disabled={isLoading || !accessToken || interests.length === 0 || userSubscription === 'free' || !canPersonalizeByPreferences(user)}
+                disabled={isLoading || !accessToken || interests.length === 0 || userSubscription === 'free' || userSubscription === null}
                 className="w-full bg-gradient-to-r from-[#EAB308] to-[#F59E0B] hover:from-[#101725] hover:to-[#101725] dark:from-[#EAB308] dark:to-[#F59E0B] dark:hover:from-[#57ACAF] dark:hover:to-[#57ACAF] text-[#101725] hover:text-white dark:text-[#101725] dark:hover:text-white uppercase tracking-widest text-sm py-6 transition-all shadow-md disabled:opacity-50 group"
               >
                 {isLoading ? (
