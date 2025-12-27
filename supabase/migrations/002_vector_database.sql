@@ -91,12 +91,15 @@ CREATE INDEX IF NOT EXISTS idx_articles_time_embedding ON news_articles(publishe
 -- Row Level Security for user_activity_vectors
 ALTER TABLE user_activity_vectors ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view own activity vectors" ON user_activity_vectors;
 CREATE POLICY "Users can view own activity vectors" ON user_activity_vectors
   FOR SELECT USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update own activity vectors" ON user_activity_vectors;
 CREATE POLICY "Users can update own activity vectors" ON user_activity_vectors
   FOR UPDATE USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can insert own activity vectors" ON user_activity_vectors;
 CREATE POLICY "Users can insert own activity vectors" ON user_activity_vectors
   FOR INSERT WITH CHECK (auth.uid() = user_id);
 

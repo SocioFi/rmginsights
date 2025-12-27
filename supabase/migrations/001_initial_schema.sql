@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS user_preferences (
 -- Subscriptions Table
 CREATE TABLE IF NOT EXISTS subscriptions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE UNIQUE,
   tier TEXT NOT NULL CHECK (tier IN ('free', 'pro', 'business')),
   status TEXT NOT NULL CHECK (status IN ('active', 'cancelled', 'expired')) DEFAULT 'active',
   started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -133,15 +133,19 @@ END;
 $$ language 'plpgsql';
 
 -- Triggers for updated_at
+DROP TRIGGER IF EXISTS update_news_articles_updated_at ON news_articles;
 CREATE TRIGGER update_news_articles_updated_at BEFORE UPDATE ON news_articles
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_user_preferences_updated_at ON user_preferences;
 CREATE TRIGGER update_user_preferences_updated_at BEFORE UPDATE ON user_preferences
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_subscriptions_updated_at ON subscriptions;
 CREATE TRIGGER update_subscriptions_updated_at BEFORE UPDATE ON subscriptions
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_news_sources_updated_at ON news_sources;
 CREATE TRIGGER update_news_sources_updated_at BEFORE UPDATE ON news_sources
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
@@ -153,28 +157,35 @@ ALTER TABLE reading_patterns ENABLE ROW LEVEL SECURITY;
 ALTER TABLE saved_articles ENABLE ROW LEVEL SECURITY;
 
 -- News articles are public (readable by all)
+DROP POLICY IF EXISTS "News articles are viewable by everyone" ON news_articles;
 CREATE POLICY "News articles are viewable by everyone" ON news_articles
     FOR SELECT USING (true);
 
 -- User preferences are private
+DROP POLICY IF EXISTS "Users can view own preferences" ON user_preferences;
 CREATE POLICY "Users can view own preferences" ON user_preferences
     FOR SELECT USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update own preferences" ON user_preferences;
 CREATE POLICY "Users can update own preferences" ON user_preferences
     FOR UPDATE USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can insert own preferences" ON user_preferences;
 CREATE POLICY "Users can insert own preferences" ON user_preferences
     FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 -- Subscriptions are private
+DROP POLICY IF EXISTS "Users can view own subscription" ON subscriptions;
 CREATE POLICY "Users can view own subscription" ON subscriptions
     FOR SELECT USING (auth.uid() = user_id);
 
 -- Reading patterns are private
+DROP POLICY IF EXISTS "Users can manage own reading patterns" ON reading_patterns;
 CREATE POLICY "Users can manage own reading patterns" ON reading_patterns
     FOR ALL USING (auth.uid() = user_id);
 
 -- Saved articles are private
+DROP POLICY IF EXISTS "Users can manage own saved articles" ON saved_articles;
 CREATE POLICY "Users can manage own saved articles" ON saved_articles
     FOR ALL USING (auth.uid() = user_id);
 
@@ -189,6 +200,7 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION create_default_subscription();

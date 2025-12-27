@@ -41,6 +41,11 @@ export class AuthService {
         hasAnonKey: !!import.meta.env.VITE_SUPABASE_ANON_KEY,
       });
       
+      // Get the correct redirect URL (handle both http and https)
+      // Using root path is simpler and works better with Supabase redirect URL whitelisting
+      const redirectUrl = `${window.location.origin}/`;
+      console.log('Using redirect URL:', redirectUrl);
+      
       const { data: authData, error } = await supabase.auth.signUp({
         email: data.email,
         password: data.password,
@@ -48,7 +53,7 @@ export class AuthService {
           data: {
             name: data.name, // Stored in user_metadata
           },
-          emailRedirectTo: `${window.location.origin}/auth/verify-email`,
+          emailRedirectTo: redirectUrl,
         },
       });
 
@@ -267,11 +272,16 @@ export class AuthService {
    */
   static async resendVerification(email: string): Promise<{ success: boolean; message?: string; error?: string }> {
     try {
+      // Get the correct redirect URL (handle both http and https)
+      // Using root path is simpler and works better with Supabase redirect URL whitelisting
+      const redirectUrl = `${window.location.origin}/`;
+      console.log('Using redirect URL for resend:', redirectUrl);
+      
       const { error } = await supabase.auth.resend({
         type: 'signup',
         email: email,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/verify-email`,
+          emailRedirectTo: redirectUrl,
         },
       });
 
