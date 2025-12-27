@@ -34,6 +34,13 @@ export class AuthService {
    */
   static async signup(data: SignupData): Promise<AuthResponse> {
     try {
+      // Log signup attempt for debugging
+      console.log('Attempting signup for:', data.email);
+      console.log('Supabase config:', {
+        projectId: import.meta.env.VITE_SUPABASE_PROJECT_ID || 'using fallback',
+        hasAnonKey: !!import.meta.env.VITE_SUPABASE_ANON_KEY,
+      });
+      
       const { data: authData, error } = await supabase.auth.signUp({
         email: data.email,
         password: data.password,
@@ -46,15 +53,26 @@ export class AuthService {
       });
 
       if (error) {
+        console.error('Signup error details:', {
+          message: error.message,
+          status: error.status,
+          name: error.name,
+        });
+        
         let errorMessage = error.message;
         
         // User-friendly error messages
-        if (error.message.includes('already registered')) {
+        if (error.message.includes('already registered') || error.message.includes('already exists')) {
           errorMessage = 'An account with this email already exists';
-        } else if (error.message.includes('Password')) {
+        } else if (error.message.includes('Password') || error.message.includes('password')) {
           errorMessage = 'Password must be at least 6 characters long';
-        } else if (error.message.includes('Invalid email')) {
+        } else if (error.message.includes('Invalid email') || error.message.includes('email')) {
           errorMessage = 'Please enter a valid email address';
+        } else if (error.message.includes('rate limit')) {
+          errorMessage = 'Too many signup attempts. Please try again in a few minutes.';
+        } else if (error.message.includes('API key') || error.message.includes('Invalid API')) {
+          errorMessage = 'Configuration error. Please contact support.';
+          console.error('API key issue - check VITE_SUPABASE_ANON_KEY in .env.local');
         }
 
         return {
@@ -62,6 +80,12 @@ export class AuthService {
           error: errorMessage,
         };
       }
+
+      console.log('Signup successful:', {
+        userId: authData.user?.id,
+        email: authData.user?.email,
+        emailConfirmed: authData.user?.email_confirmed_at !== null,
+      });
 
       return {
         success: true,
@@ -95,15 +119,26 @@ export class AuthService {
       if (error) {
         let errorMessage = 'Invalid email or password';
         
-        if (error.message.includes('Email not confirmed')) {
+        if (error.message.includes('Email not confirmed') || error.message.includes('email_not_confirmed')) {
           errorMessage = 'Please verify your email address before logging in. Check your inbox for the verification link.';
-        } else if (error.message.includes('Invalid login credentials')) {
+        } else if (error.message.includes('Invalid login credentials') || error.message.includes('invalid_credentials')) {
           errorMessage = 'Invalid email or password. Please check your credentials.';
         }
 
         return {
           success: false,
           error: errorMessage,
+        };
+      }
+
+      // Check if email is verified
+      if (authData.user && !authData.user.email_confirmed_at) {
+        // Sign out the user since email is not verified
+        await supabase.auth.signOut();
+        
+        return {
+          success: false,
+          error: 'Please verify your email address before logging in. Check your inbox for the verification link.',
         };
       }
 
