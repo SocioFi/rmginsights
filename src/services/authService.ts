@@ -1,0 +1,332 @@
+// Authentication Service
+// Handles all authentication-related API calls using Direct Supabase Auth
+// No Edge Functions required - works locally and on Vercel
+
+import { supabase } from '../utils/supabase/client';
+
+export interface SignupData {
+  email: string;
+  password: string;
+  name: string;
+}
+
+export interface LoginData {
+  email: string;
+  password: string;
+}
+
+export interface AuthResponse {
+  success: boolean;
+  user?: any;
+  session?: {
+    access_token: string;
+    refresh_token: string;
+    expires_at: number;
+  };
+  profile?: any;
+  message?: string;
+  error?: string;
+}
+
+export class AuthService {
+  /**
+   * Sign up a new user using Direct Supabase Auth
+   */
+  static async signup(data: SignupData): Promise<AuthResponse> {
+    try {
+      const { data: authData, error } = await supabase.auth.signUp({
+        email: data.email,
+        password: data.password,
+        options: {
+          data: {
+            name: data.name, // Stored in user_metadata
+          },
+          emailRedirectTo: `${window.location.origin}/auth/verify-email`,
+        },
+      });
+
+      if (error) {
+        let errorMessage = error.message;
+        
+        // User-friendly error messages
+        if (error.message.includes('already registered')) {
+          errorMessage = 'An account with this email already exists';
+        } else if (error.message.includes('Password')) {
+          errorMessage = 'Password must be at least 6 characters long';
+        } else if (error.message.includes('Invalid email')) {
+          errorMessage = 'Please enter a valid email address';
+        }
+
+        return {
+          success: false,
+          error: errorMessage,
+        };
+      }
+
+      return {
+        success: true,
+        user: authData.user,
+        session: authData.session ? {
+          access_token: authData.session.access_token,
+          refresh_token: authData.session.refresh_token,
+          expires_at: authData.session.expires_at || 0,
+        } : undefined,
+        message: 'Account created successfully! Please check your email to verify your account.',
+      };
+    } catch (error: any) {
+      console.error('Signup error:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to create account',
+      };
+    }
+  }
+
+  /**
+   * Login user using Direct Supabase Auth
+   */
+  static async login(data: LoginData): Promise<AuthResponse> {
+    try {
+      const { data: authData, error } = await supabase.auth.signInWithPassword({
+        email: data.email,
+        password: data.password,
+      });
+
+      if (error) {
+        let errorMessage = 'Invalid email or password';
+        
+        if (error.message.includes('Email not confirmed')) {
+          errorMessage = 'Please verify your email address before logging in. Check your inbox for the verification link.';
+        } else if (error.message.includes('Invalid login credentials')) {
+          errorMessage = 'Invalid email or password. Please check your credentials.';
+        }
+
+        return {
+          success: false,
+          error: errorMessage,
+        };
+      }
+
+      // Get user profile with subscription info
+      let profile = null;
+      if (authData.user) {
+        try {
+          const { data: profileData, error: profileError } = await supabase
+            .rpc('get_user_profile', { p_user_id: authData.user.id });
+          
+          if (!profileError && profileData && profileData.length > 0) {
+            profile = profileData[0];
+          }
+        } catch (profileErr) {
+          console.warn('Could not fetch user profile:', profileErr);
+          // Don't fail login if profile fetch fails
+        }
+      }
+
+      return {
+        success: true,
+        user: authData.user,
+        session: authData.session ? {
+          access_token: authData.session.access_token,
+          refresh_token: authData.session.refresh_token,
+          expires_at: authData.session.expires_at || 0,
+        } : undefined,
+        profile: profile,
+      };
+    } catch (error: any) {
+      console.error('Login error:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to login',
+      };
+    }
+  }
+
+  /**
+   * Request password reset using Direct Supabase Auth
+   */
+  static async forgotPassword(email: string): Promise<{ success: boolean; message?: string; error?: string }> {
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/reset-password`,
+      });
+
+      if (error) {
+        return {
+          success: false,
+          error: error.message || 'Failed to send password reset email',
+        };
+      }
+
+      // Don't reveal if email exists (security best practice)
+      return {
+        success: true,
+        message: 'If an account exists with this email, a password reset link has been sent.',
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message || 'Failed to request password reset',
+      };
+    }
+  }
+
+  /**
+   * Reset password with token using Direct Supabase Auth
+   * Note: Supabase password reset flow requires the user to be redirected from email link
+   * The token in the URL hash is automatically handled by Supabase client
+   */
+  static async resetPassword(accessToken: string, newPassword: string): Promise<{ success: boolean; message?: string; error?: string }> {
+    try {
+      // If access token is provided, set the session first
+      if (accessToken) {
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: '', // Not needed for password reset
+        });
+
+        if (sessionError) {
+          return {
+            success: false,
+            error: 'Invalid or expired reset token. Please request a new password reset link.',
+          };
+        }
+      }
+
+      // Check if user is authenticated (session should be set from the reset link)
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError || !user) {
+        return {
+          success: false,
+          error: 'Invalid or expired reset token. Please request a new password reset link.',
+        };
+      }
+
+      // Update the password
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (updateError) {
+        return {
+          success: false,
+          error: updateError.message || 'Failed to reset password',
+        };
+      }
+
+      return {
+        success: true,
+        message: 'Password has been reset successfully. You can now login with your new password.',
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message || 'Failed to reset password',
+      };
+    }
+  }
+
+  /**
+   * Resend verification email using Direct Supabase Auth
+   */
+  static async resendVerification(email: string): Promise<{ success: boolean; message?: string; error?: string }> {
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: email,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/verify-email`,
+        },
+      });
+
+      if (error) {
+        return {
+          success: false,
+          error: error.message || 'Failed to send verification email',
+        };
+      }
+
+      return {
+        success: true,
+        message: 'Verification email has been sent. Please check your inbox.',
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message || 'Failed to resend verification email',
+      };
+    }
+  }
+
+  /**
+   * Get user profile using Direct Supabase Auth
+   */
+  static async getProfile(accessToken?: string): Promise<{ success: boolean; profile?: any; error?: string }> {
+    try {
+      // Get current user (session is already managed by Supabase client)
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        return {
+          success: false,
+          error: 'User not authenticated',
+        };
+      }
+
+      // Get user profile with subscription info from database
+      const { data: profileData, error: profileError } = await supabase
+        .rpc('get_user_profile', { p_user_id: user.id });
+
+      if (profileError) {
+        return {
+          success: false,
+          error: profileError.message || 'Failed to get profile',
+        };
+      }
+
+      return {
+        success: true,
+        profile: profileData && profileData.length > 0 ? profileData[0] : null,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message || 'Failed to get profile',
+      };
+    }
+  }
+
+  /**
+   * Login with OAuth provider
+   */
+  static async loginWithOAuth(provider: 'google' | 'linkedin'): Promise<void> {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+      },
+    });
+
+    if (error) {
+      throw error;
+    }
+  }
+
+  /**
+   * Logout user
+   */
+  static async logout(): Promise<void> {
+    await supabase.auth.signOut();
+  }
+
+  /**
+   * Get current session
+   */
+  static async getSession() {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session;
+  }
+}
+
+
