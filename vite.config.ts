@@ -57,7 +57,7 @@ export default defineConfig({
   },
   build: {
     target: 'esnext',
-    outDir: 'build',
+    outDir: 'dist', // Vercel expects 'dist' by default
     rollupOptions: {
       // Exclude supabase templates and migrations from build
       external: (id) => {
