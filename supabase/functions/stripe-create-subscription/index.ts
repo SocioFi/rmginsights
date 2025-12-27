@@ -17,6 +17,19 @@ serve(async (req) => {
   }
 
   try {
+    // Log all headers for debugging
+    console.log("Request headers:", Object.fromEntries(req.headers.entries()));
+    
+    // Check for apikey header (required by Supabase Edge Functions)
+    const apikey = req.headers.get("apikey");
+    if (!apikey) {
+      console.error("Missing apikey header");
+      return new Response(
+        JSON.stringify({ error: "Missing apikey header. This is required for Supabase Edge Functions." }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 401 }
+      );
+    }
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY")!;
@@ -38,15 +51,42 @@ serve(async (req) => {
     // Get authenticated user
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
-      throw new Error("No authorization header");
+      console.error("No authorization header received");
+      return new Response(
+        JSON.stringify({ error: "No authorization header. Please log in again." }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 401 }
+      );
     }
 
     const token = authHeader.replace("Bearer ", "");
+    if (!token || token === "null" || token === "undefined") {
+      console.error("Invalid token in authorization header:", token);
+      return new Response(
+        JSON.stringify({ error: "Invalid authentication token. Please log in again." }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 401 }
+      );
+    }
+
+    console.log("Attempting to authenticate user with token (length:", token.length, ")");
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
 
-    if (userError || !user) {
-      throw new Error("Unauthorized");
+    if (userError) {
+      console.error("User authentication error:", userError.message, userError.status);
+      return new Response(
+        JSON.stringify({ error: `Authentication failed: ${userError.message}. Please log in again.` }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 401 }
+      );
     }
+
+    if (!user) {
+      console.error("No user returned from authentication");
+      return new Response(
+        JSON.stringify({ error: "User not found. Please log in again." }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 401 }
+      );
+    }
+
+    console.log("User authenticated successfully:", user.id, user.email);
 
     const { tier, payment_method_id } = await req.json();
 

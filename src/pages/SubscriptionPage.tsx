@@ -10,6 +10,7 @@ import { AuthService } from '../services/authService';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { publicAnonKey } from '../utils/supabase/info';
 import logoImage from 'figma:asset/b912a80f881cf1ec7c838d822f0de9df1ed32ebf.png';
 
 // Initialize Stripe (use environment variable or fallback)
@@ -66,6 +67,15 @@ export function SubscriptionPage({ user, accessToken, onBack, onUpgradeSuccess }
       return;
     }
 
+    // Validate accessToken before making request
+    if (accessToken === 'null' || accessToken === 'undefined' || accessToken.trim() === '') {
+      console.error('Invalid accessToken:', accessToken);
+      alert('Your session has expired. Please log in again.');
+      return;
+    }
+
+    console.log('Attempting upgrade with token (length:', accessToken.length, '), user:', user.id);
+
     if (!stripePromise) {
       alert('Stripe is not configured. Please contact support.');
       return;
@@ -75,6 +85,22 @@ export function SubscriptionPage({ user, accessToken, onBack, onUpgradeSuccess }
     setPaymentError(null);
     
     try {
+      // Get fresh session token (in case it expired)
+      const { data: { session } } = await supabase.auth.getSession();
+      const tokenToUse = session?.access_token || accessToken;
+      
+      if (!tokenToUse) {
+        throw new Error('No valid session. Please log in again.');
+      }
+
+      console.log('Calling Stripe Edge Function with token (length:', tokenToUse.length, ')');
+      console.log('Using apikey (length):', publicAnonKey?.length || 0);
+      
+      // Validate apikey before sending
+      if (!publicAnonKey || publicAnonKey.trim() === '') {
+        throw new Error('Supabase API key is not configured. Please check your environment variables.');
+      }
+      
       // Call Edge Function to create subscription
       const response = await fetch(
         `https://yxhvknioxipeqgleuhjc.supabase.co/functions/v1/stripe-create-subscription`,
@@ -82,7 +108,9 @@ export function SubscriptionPage({ user, accessToken, onBack, onUpgradeSuccess }
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`,
+            'Authorization': `Bearer ${tokenToUse}`,
+            'apikey': publicAnonKey, // Required for Supabase Edge Functions
+            'x-client-info': 'rmg-insights-web', // Optional: helps with debugging
           },
           body: JSON.stringify({ tier }),
         }
