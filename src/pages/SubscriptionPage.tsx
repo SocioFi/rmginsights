@@ -7,7 +7,14 @@ import { Separator } from '../components/ui/separator';
 import { CheckCircle2, Crown, Sparkles, ArrowRight, Lock, Zap, TrendingUp, BarChart3, Brain, FileText, ShieldCheck, Users, Globe2, Target, Check } from 'lucide-react';
 import { supabase } from '../utils/supabase/client';
 import { AuthService } from '../services/authService';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import logoImage from 'figma:asset/b912a80f881cf1ec7c838d822f0de9df1ed32ebf.png';
+
+// Initialize Stripe (use environment variable or fallback)
+const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '';
+const stripePromise = stripePublishableKey ? loadStripe(stripePublishableKey) : null;
 
 interface SubscriptionPageProps {
   user: any;
@@ -20,6 +27,10 @@ export function SubscriptionPage({ user, accessToken, onBack, onUpgradeSuccess }
   const [currentTier, setCurrentTier] = useState<'free' | 'pro' | 'business' | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpgrading, setIsUpgrading] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedTier, setSelectedTier] = useState<'pro' | 'business' | null>(null);
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
 
   useEffect(() => {
     if (accessToken && user) {
@@ -55,26 +66,65 @@ export function SubscriptionPage({ user, accessToken, onBack, onUpgradeSuccess }
       return;
     }
 
+    if (!stripePromise) {
+      alert('Stripe is not configured. Please contact support.');
+      return;
+    }
+
     setIsUpgrading(true);
+    setPaymentError(null);
+    
     try {
-      // TODO: Integrate with Stripe or payment provider
-      // For now, we'll just show a message
-      alert(`Upgrade to ${tier.toUpperCase()} coming soon! Payment integration will be added here.`);
-      
-      // In production, this would:
-      // 1. Create a Stripe checkout session
-      // 2. Redirect to Stripe payment page
-      // 3. Handle webhook to update subscription in database
-      
-      if (onUpgradeSuccess) {
-        onUpgradeSuccess();
+      // Call Edge Function to create subscription
+      const response = await fetch(
+        `https://yxhvknioxipeqgleuhjc.supabase.co/functions/v1/stripe-create-subscription`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ tier }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to create subscription');
       }
-    } catch (err) {
+
+      const { subscription_id, client_secret } = await response.json();
+      
+      if (!client_secret) {
+        throw new Error('No client secret returned');
+      }
+
+      // Set up payment modal
+      setSelectedTier(tier);
+      setClientSecret(client_secret);
+      setShowPaymentModal(true);
+    } catch (err: any) {
       console.error('Upgrade error:', err);
-      alert('Failed to process upgrade. Please try again.');
+      setPaymentError(err.message || 'Failed to process upgrade. Please try again.');
+      alert(err.message || 'Failed to process upgrade. Please try again.');
     } finally {
       setIsUpgrading(false);
     }
+  };
+
+  const handlePaymentSuccess = async () => {
+    setShowPaymentModal(false);
+    setClientSecret(null);
+    setSelectedTier(null);
+    
+    // Reload subscription status
+    await loadSubscription();
+    
+    if (onUpgradeSuccess) {
+      onUpgradeSuccess();
+    }
+    
+    alert('Subscription upgraded successfully!');
   };
 
   const tiers = [
@@ -328,7 +378,86 @@ export function SubscriptionPage({ user, accessToken, onBack, onUpgradeSuccess }
           </Button>
         </div>
       </div>
+
+      {/* Payment Modal */}
+      {stripePromise && clientSecret && (
+        <Dialog open={showPaymentModal} onOpenChange={setShowPaymentModal}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-white dark:bg-[#182336] border-2 border-[#E5E7EB] dark:border-[#6F83A7]">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-bold text-[#101725] dark:text-[#E5E7EB]" style={{ fontFamily: 'Georgia, serif' }}>
+                Complete Your Subscription
+              </DialogTitle>
+              <DialogDescription className="text-[#6F83A7] dark:text-[#9BA5B7]">
+                Upgrade to {selectedTier?.toUpperCase()} tier
+              </DialogDescription>
+            </DialogHeader>
+            
+            <Elements stripe={stripePromise} options={{ clientSecret }}>
+              <PaymentForm 
+                onSuccess={handlePaymentSuccess}
+                onError={(error) => setPaymentError(error)}
+              />
+            </Elements>
+
+            {paymentError && (
+              <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 border-2 border-red-500 dark:border-red-800 rounded">
+                <p className="text-red-600 dark:text-red-400 text-sm">{paymentError}</p>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
+  );
+}
+
+// Payment Form Component
+function PaymentForm({ onSuccess, onError }: { onSuccess: () => void; onError: (error: string) => void }) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!stripe || !elements) {
+      return;
+    }
+
+    setIsProcessing(true);
+
+    try {
+      const { error, paymentIntent } = await stripe.confirmPayment({
+        elements,
+        confirmParams: {
+          return_url: `${window.location.origin}/subscriptions`,
+        },
+        redirect: 'if_required',
+      });
+
+      if (error) {
+        onError(error.message || 'Payment failed');
+      } else if (paymentIntent && paymentIntent.status === 'succeeded') {
+        onSuccess();
+      }
+    } catch (err: any) {
+      onError(err.message || 'An error occurred');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="mt-6">
+      <PaymentElement />
+      <Button
+        type="submit"
+        disabled={!stripe || isProcessing}
+        className="w-full mt-6 py-6 bg-gradient-to-r from-[#57ACAF] to-[#6F83A7] hover:from-[#101725] hover:to-[#101725] dark:from-[#EAB308] dark:to-[#F59E0B] dark:hover:from-[#57ACAF] dark:hover:to-[#57ACAF] text-white dark:text-[#101725] dark:hover:text-white uppercase tracking-widest"
+      >
+        {isProcessing ? 'Processing...' : 'Complete Payment'}
+      </Button>
+    </form>
   );
 }
 
